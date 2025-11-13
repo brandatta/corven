@@ -4,6 +4,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from mysql.connector import pooling
 import plotly.express as px
+from streamlit_plotly_events import plotly_events
 
 # =====================================================================================
 # CONFIG
@@ -30,6 +31,10 @@ DB_PORT = int(get_secret("DB_PORT", "3306"))
 DB_USER = get_secret("DB_USER")
 DB_PASS = get_secret("DB_PASS")
 DB_NAME = get_secret("DB_NAME")
+
+# estado seleccionado en el pie (para filtrar detalle)
+if "estado_filter" not in st.session_state:
+    st.session_state["estado_filter"] = None
 
 # =====================================================================================
 # DB CONNECTION
@@ -158,7 +163,7 @@ else:
         ["A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto","Total","Total_MM"]
     ].sum(numeric_only=True)
 
-    # Valores originales (pueden ser negativos)
+    # Valores contables (pueden ser negativos)
     a_vencer = int0(sums["A Vencer"])
     b_0_15   = int0(sums["0-15"])
     b_16_60  = int0(sums["16-60"])
@@ -171,7 +176,7 @@ else:
 
     overdue_raw = b_0_15 + b_16_60 + b_61_90 + b_91_120 + b_120p
 
-    # Para porcentajes usamos valores absolutos
+    # Para porcentajes trabajamos con valores absolutos
     total_abs   = abs(total)
     overdue_abs = abs(overdue_raw)
     porc        = round(overdue_abs / total_abs * 100, 1) if total_abs else 0
@@ -196,11 +201,13 @@ st.divider()
 # =====================================================================================
 # GRAPHS
 # =====================================================================================
+estado_click = None  # estado clickeado en este render
+
 if not resumen.empty:
     buckets = ["A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto"]
     buck_vals = {b: int0(resumen[b].sum()) for b in buckets}
 
-    # Para gráficos trabajamos con montos en valor absoluto
+    # Para gráficos usamos valores absolutos
     df_b = pd.DataFrame({
         "Bucket": buckets,
         "Importe": [abs(buck_vals[b]) for b in buckets]
@@ -220,7 +227,7 @@ if not resumen.empty:
         fig.update_traces(texttemplate="%{text:,}", textposition="outside")
         st.plotly_chart(fig, use_container_width=True)
 
-    # Pie chart: Vencido vs A Vencer
+    # Pie chart: Vencido vs A Vencer (clickable)
     with col2:
         vencido_abs = abs(
             buck_vals["0-15"] +
@@ -242,7 +249,23 @@ if not resumen.empty:
             values="Importe",
             title="Vencido vs A Vencer"
         )
-        st.plotly_chart(fig2, use_container_width=True)
+
+        selected = plotly_events(
+            fig2,
+            click_event=True,
+            hover_event=False,
+            select_event=False,
+            key="pie_estado"
+        )
+
+        if selected:
+            # En pie, la etiqueta suele venir en "label"
+            estado_click = selected[0].get("label") or selected[0].get("Estado")
+            # toggle: si clickeo el mismo, saco el filtro
+            if st.session_state["estado_filter"] == estado_click:
+                st.session_state["estado_filter"] = None
+            else:
+                st.session_state["estado_filter"] = estado_click
 
     # Treemap: Top 20 proveedores
     top = (
@@ -252,7 +275,6 @@ if not resumen.empty:
         .sort_values("Total", ascending=False)
         .head(20)
     )
-    # También conviene verlo en valor absoluto para exposición
     top["Total_abs"] = top["Total"].abs()
     fig3 = px.treemap(
         top,
@@ -270,11 +292,31 @@ st.subheader("Detalle de Comprobantes")
 if detalle.empty:
     st.write("Sin datos para los filtros seleccionados.")
 else:
+    # Copia base del detalle
     det = detalle.copy()
     det["Fecha_Factura"] = pd.to_datetime(det["Fecha_Factura"]).dt.date
     det["VtoSAP"]        = pd.to_datetime(det["VtoSAP"]).dt.date
 
-    st.dataframe(det, use_container_width=True, height=420)
+    # Aplicar filtro por estado del pie chart (si corresponde)
+    estado = st.session_state.get("estado_filter")
+
+    if estado == "Vencido":
+        det_filtrado = det[det["bucket"].isin(["0-15","16-60","61-90","91-120","+120"])]
+    elif estado == "A Vencer":
+        det_filtrado = det[det["bucket"] == "A Vencer"]
+    elif estado == "Sin Vto":
+        det_filtrado = det[det["bucket"] == "Sin Vto"]
+    else:
+        det_filtrado = det
+
+    st.dataframe(det_filtrado, use_container_width=True, height=420)
+
+    # Cantidad de registros mostrados
+    total_regs = len(det_filtrado)
+    if estado:
+        st.write(f"Cantidad de comprobantes mostrados (filtro: {estado}): **{total_regs}**")
+    else:
+        st.write(f"Cantidad de comprobantes mostrados: **{total_regs}**")
 
     c1, c2 = st.columns(2)
     c1.download_button(
@@ -285,7 +327,7 @@ else:
     )
     c2.download_button(
         "Descargar detalle (CSV)",
-        det.to_csv(index=False).encode("utf-8"),
+        det_filtrado.to_csv(index=False).encode("utf-8"),
         "detalle.csv",
         mime="text/csv"
     )
