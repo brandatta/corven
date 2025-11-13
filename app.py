@@ -1,206 +1,20 @@
-import os
-import pandas as pd
-import streamlit as st
-from dotenv import load_dotenv
-from mysql.connector import pooling
-import plotly.express as px
-
 # =====================================================================================
-# CONFIG
+# GRÁFICOS + FILTRO POR BUCKET
 # =====================================================================================
-st.set_page_config(
-    page_title="Aging AP – KPIs",
-    page_icon="",
-    layout="wide"
-)
+st.subheader("Distribución y Análisis por Bucket")
 
-# =====================================================================================
-# LOAD SECRETS / ENV
-# =====================================================================================
-load_dotenv()
+# Dropdown arriba del gráfico
+bucket_options = ["(Todos)", "A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto"]
+bucket_sel = st.selectbox("Filtro por bucket", bucket_options, index=0)
 
-def get_secret(key, default=None):
-    try:
-        return st.secrets[key]
-    except Exception:
-        return os.getenv(key, default)
-
-DB_HOST = get_secret("DB_HOST")
-DB_PORT = int(get_secret("DB_PORT", "3306"))
-DB_USER = get_secret("DB_USER")
-DB_PASS = get_secret("DB_PASS")
-DB_NAME = get_secret("DB_NAME")
-
-# =====================================================================================
-# DB CONNECTION
-# =====================================================================================
-pool = pooling.MySQLConnectionPool(
-    pool_name="pool",
-    pool_size=5,
-    pool_reset_session=True,
-    host=DB_HOST,
-    port=DB_PORT,
-    user=DB_USER,
-    password=DB_PASS,
-    database=DB_NAME
-)
-
-@st.cache_data(ttl=300)
-def run_query(sql, params=()):
-    conn = pool.get_connection()
-    try:
-        df = pd.read_sql(sql, conn, params=params)
-        return df
-    finally:
-        conn.close()
-
-# =====================================================================================
-# LOADERS
-# =====================================================================================
-def load_resumen(soc=None, prov=None):
-    sql = """
-    SELECT Sociedad, Proveedor, Proveedor_Nombre,
-        `A Vencer`, `0-15`, `16-60`, `61-90`, `91-120`, `+120`, `Sin Vto`,
-        Total, Total_MM
-    FROM vista_aging_ap_resumen
-    WHERE 1=1
-    """
-    params = []
-    if soc:
-        sql += " AND Sociedad=%s"
-        params.append(soc)
-    if prov:
-        sql += " AND Proveedor=%s"
-        params.append(prov)
-    return run_query(sql, tuple(params))
-
-def load_detalle(soc=None, prov=None):
-    sql = """
-    SELECT Sociedad, Proveedor, Proveedor_Nombre, Nro_Documento,
-           Fecha_Factura, VtoSAP, ImpMonLoc, MonDoc, overdue_days, bucket
-    FROM vista_aging_ap_detalle
-    WHERE 1=1
-    """
-    params = []
-    if soc:
-        sql += " AND Sociedad=%s"
-        params.append(soc)
-    if prov:
-        sql += " AND Proveedor=%s"
-        params.append(prov)
-    sql += " ORDER BY VtoSAP ASC, ImpMonLoc DESC"
-    return run_query(sql, tuple(params))
-
-def load_sociedades():
-    df = run_query("SELECT DISTINCT Sociedad FROM vista_aging_ap_resumen ORDER BY Sociedad")
-    return df["Sociedad"].tolist() if not df.empty else []
-
-def load_proveedores(soc=None):
-    if soc:
-        df = run_query("""
-            SELECT DISTINCT Proveedor, Proveedor_Nombre
-            FROM vista_aging_ap_resumen
-            WHERE Sociedad=%s
-            ORDER BY Proveedor_Nombre
-        """, (soc,))
-    else:
-        df = run_query("""
-            SELECT DISTINCT Proveedor, Proveedor_Nombre
-            FROM vista_aging_ap_resumen
-            ORDER BY Proveedor_Nombre
-        """)
-    return df
-
-# =====================================================================================
-# UI
-# =====================================================================================
-
-st.title("Aging de Cuentas a Pagar – KPIs")
-
-# Sidebar
-with st.sidebar:
-    st.header("Filtros")
-
-    sociedades = load_sociedades()
-    sociedad = st.selectbox("Sociedad", ["(Todas)"] + sociedades)
-    sociedad = None if sociedad == "(Todas)" else sociedad
-
-    prov_df = load_proveedores(sociedad)
-    prov_map = {"(Todos)": None}
-    for _, r in prov_df.iterrows():
-        prov_map[f"{r['Proveedor_Nombre']} ({r['Proveedor']})"] = r["Proveedor"]
-
-    proveedor_label = st.selectbox("Proveedor", list(prov_map.keys()))
-    proveedor = prov_map[proveedor_label]
-
-# =====================================================================================
-# DATA
-# =====================================================================================
-resumen = load_resumen(sociedad, proveedor)
-detalle = load_detalle(sociedad, proveedor)
-
-def int0(x):
-    try:
-        return int(x)
-    except Exception:
-        return 0
-
-# =====================================================================================
-# KPI BLOCK
-# =====================================================================================
-col = st.columns(10)
-
-if resumen.empty:
-    for c in col:
-        c.metric("", "0")
-else:
-    sums = resumen[
-        ["A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto","Total","Total_MM"]
-    ].sum(numeric_only=True)
-
-    a_vencer = int0(sums["A Vencer"])
-    b_0_15   = int0(sums["0-15"])
-    b_16_60  = int0(sums["16-60"])
-    b_61_90  = int0(sums["61-90"])
-    b_91_120 = int0(sums["91-120"])
-    b_120p   = int0(sums["+120"])
-    sin_vto  = int0(sums["Sin Vto"])
-    total    = int0(sums["Total"])
-    total_mm = int0(sums["Total_MM"])
-
-    overdue_raw = b_0_15 + b_16_60 + b_61_90 + b_91_120 + b_120p
-
-    total_abs   = abs(total)
-    overdue_abs = abs(overdue_raw)
-    porc        = round(overdue_abs / total_abs * 100, 1) if total_abs else 0
-
-    docs = len(detalle) if not detalle.empty else resumen.shape[0]
-
-    vals = [
-        a_vencer, b_0_15, b_16_60,
-        b_61_90, b_91_120, b_120p,
-        sin_vto, total_mm, porc, docs
-    ]
-    labels = [
-        "A Vencer","0-15","16-60","61-90","91-120","+120",
-        "Sin Vto","Total MM (-1)","% Vencido","Docs"
-    ]
-
-    for c, l, v in zip(col, labels, vals):
-        c.metric(l, f"{v:,}".replace(",", "."))
-
-st.divider()
-
-# =====================================================================================
-# GRÁFICOS
-# =====================================================================================
 if not resumen.empty:
+    # usamos valores absolutos para el gráfico
     buckets = ["A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto"]
-    buck_vals = {b: int0(resumen[b].sum()) for b in buckets}
+    buck_vals = {b: abs(int0(resumen[b].sum())) for b in buckets}
 
     df_b = pd.DataFrame({
         "Bucket": buckets,
-        "Importe": [abs(buck_vals[b]) for b in buckets]
+        "Importe": [buck_vals[b] for b in buckets]
     })
 
     col1, col2 = st.columns([2,1])
@@ -222,7 +36,7 @@ if not resumen.empty:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # Treemap: Top 20 proveedores por exposición total (absoluta)
+    # Treemap
     with col2:
         top = (
             resumen.groupby("Proveedor_Nombre")["Total"]
@@ -232,16 +46,14 @@ if not resumen.empty:
             .head(20)
         )
         top["Total_abs"] = top["Total"].abs()
+
         fig3 = px.treemap(
             top,
             path=["Proveedor_Nombre"],
             values="Total_abs",
             title="Top 20 proveedores por exposición total"
         )
-        fig3.update_layout(
-            template="plotly_white",
-            paper_bgcolor="white"
-        )
+        fig3.update_layout(template="plotly_white", paper_bgcolor="white")
         st.plotly_chart(fig3, use_container_width=True)
 
 # =====================================================================================
@@ -256,10 +68,7 @@ else:
     det["Fecha_Factura"] = pd.to_datetime(det["Fecha_Factura"]).dt.date
     det["VtoSAP"]        = pd.to_datetime(det["VtoSAP"]).dt.date
 
-    # Dropdown de bucket para filtrar detalle
-    bucket_options = ["(Todos)", "A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto"]
-    bucket_sel = st.selectbox("Filtro por bucket", bucket_options, index=0)
-
+    # Filtrar según dropdown
     if bucket_sel == "(Todos)":
         det_filtrado = det
     else:
