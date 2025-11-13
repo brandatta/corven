@@ -32,9 +32,9 @@ DB_USER = get_secret("DB_USER")
 DB_PASS = get_secret("DB_PASS")
 DB_NAME = get_secret("DB_NAME")
 
-# estado seleccionado en el pie (para filtrar detalle)
-if "estado_filter" not in st.session_state:
-    st.session_state["estado_filter"] = None
+# estado de filtro por bucket (click en bar chart)
+if "bucket_filter" not in st.session_state:
+    st.session_state["bucket_filter"] = None
 
 # =====================================================================================
 # DB CONNECTION
@@ -163,7 +163,6 @@ else:
         ["A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto","Total","Total_MM"]
     ].sum(numeric_only=True)
 
-    # Valores contables (pueden ser negativos)
     a_vencer = int0(sums["A Vencer"])
     b_0_15   = int0(sums["0-15"])
     b_16_60  = int0(sums["16-60"])
@@ -176,7 +175,6 @@ else:
 
     overdue_raw = b_0_15 + b_16_60 + b_61_90 + b_91_120 + b_120p
 
-    # Para porcentajes trabajamos con valores absolutos
     total_abs   = abs(total)
     overdue_abs = abs(overdue_raw)
     porc        = round(overdue_abs / total_abs * 100, 1) if total_abs else 0
@@ -199,13 +197,12 @@ else:
 st.divider()
 
 # =====================================================================================
-# GRAPHS
+# GRÁFICOS
 # =====================================================================================
 if not resumen.empty:
     buckets = ["A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto"]
     buck_vals = {b: int0(resumen[b].sum()) for b in buckets}
 
-    # Bar chart (por bucket, en absoluto)
     df_b = pd.DataFrame({
         "Bucket": buckets,
         "Importe": [abs(buck_vals[b]) for b in buckets]
@@ -213,6 +210,7 @@ if not resumen.empty:
 
     col1, col2 = st.columns([2,1])
 
+    # Bar chart: Distribución por bucket (clickable para filtrar detalle)
     with col1:
         fig = px.bar(
             df_b,
@@ -222,73 +220,40 @@ if not resumen.empty:
             title="Distribución por bucket"
         )
         fig.update_traces(texttemplate="%{text:,}", textposition="outside")
-        st.plotly_chart(fig, use_container_width=True)
 
-    # Pie chart basado en DETALLE (agrupado a Vencido / A Vencer / Sin Vto)
+        events = plotly_events(
+            fig,
+            click_event=True,
+            hover_event=False,
+            select_event=False,
+            key="bucket_chart"
+        )
+
+        if events:
+            clicked_bucket = events[0].get("x") or events[0].get("Bucket")
+            # toggle: si clickeo el mismo bucket, saco el filtro
+            if st.session_state["bucket_filter"] == clicked_bucket:
+                st.session_state["bucket_filter"] = None
+            else:
+                st.session_state["bucket_filter"] = clicked_bucket
+
+    # Treemap: Top 20 proveedores por exposición total (absoluta)
     with col2:
-        if not detalle.empty:
-            det_pie = detalle.copy()
-
-            def map_estado(bucket):
-                if bucket == "A Vencer":
-                    return "A Vencer"
-                elif bucket == "Sin Vto":
-                    return "Sin Vto"
-                else:
-                    return "Vencido"
-
-            det_pie["Estado"] = det_pie["bucket"].apply(map_estado)
-            det_pie["importe_abs"] = det_pie["ImpMonLoc"].abs()
-
-            df_pie = (
-                det_pie.groupby("Estado", as_index=False)["importe_abs"]
-                .sum()
-                .rename(columns={"importe_abs": "Importe"})
-            )
-
-            fig2 = px.pie(
-                df_pie,
-                names="Estado",
-                values="Importe",
-                title="Vencido vs A Vencer"
-            )
-
-            selected = plotly_events(
-                fig2,
-                click_event=True,
-                hover_event=False,
-                select_event=False,
-                key="pie_estado"
-            )
-
-            if selected:
-                estado_click = selected[0].get("label") or selected[0].get("Estado")
-                # toggle: si clickeo el mismo, saco el filtro
-                if st.session_state["estado_filter"] == estado_click:
-                    st.session_state["estado_filter"] = None
-                else:
-                    st.session_state["estado_filter"] = estado_click
-
-            st.plotly_chart(fig2, use_container_width=True)
-        else:
-            st.write("Sin datos de detalle para construir el gráfico Vencido vs A Vencer.")
-
-    # Treemap: Top 20 proveedores (en absoluto)
-    top = (
-        resumen.groupby("Proveedor_Nombre")["Total"]
-        .sum()
-        .reset_index()
-        .sort_values("Total", ascending=False)
-        .head(20)
-    )
-    top["Total_abs"] = top["Total"].abs()
-    fig3 = px.treemap(
-        top,
-        path=["Proveedor_Nombre"],
-        values="Total_abs",
-        title="Top 20 proveedores por exposición total"
-    )
-    st.plotly_chart(fig3, use_container_width=True)
+        top = (
+            resumen.groupby("Proveedor_Nombre")["Total"]
+            .sum()
+            .reset_index()
+            .sort_values("Total", ascending=False)
+            .head(20)
+        )
+        top["Total_abs"] = top["Total"].abs()
+        fig3 = px.treemap(
+            top,
+            path=["Proveedor_Nombre"],
+            values="Total_abs",
+            title="Top 20 proveedores por exposición total"
+        )
+        st.plotly_chart(fig3, use_container_width=True)
 
 # =====================================================================================
 # DETAIL TABLE
@@ -302,22 +267,18 @@ else:
     det["Fecha_Factura"] = pd.to_datetime(det["Fecha_Factura"]).dt.date
     det["VtoSAP"]        = pd.to_datetime(det["VtoSAP"]).dt.date
 
-    estado = st.session_state.get("estado_filter")
+    bucket_filter = st.session_state.get("bucket_filter")
 
-    if estado == "Vencido":
-        det_filtrado = det[det["bucket"].isin(["0-15","16-60","61-90","91-120","+120"])]
-    elif estado == "A Vencer":
-        det_filtrado = det[det["bucket"] == "A Vencer"]
-    elif estado == "Sin Vto":
-        det_filtrado = det[det["bucket"] == "Sin Vto"]
+    if bucket_filter:
+        det_filtrado = det[det["bucket"] == bucket_filter]
     else:
         det_filtrado = det
 
     st.dataframe(det_filtrado, use_container_width=True, height=420)
 
     total_regs = len(det_filtrado)
-    if estado:
-        st.write(f"Cantidad de comprobantes mostrados (filtro: {estado}): {total_regs}")
+    if bucket_filter:
+        st.write(f"Cantidad de comprobantes mostrados (filtro: {bucket_filter}): {total_regs}")
     else:
         st.write(f"Cantidad de comprobantes mostrados: {total_regs}")
 
