@@ -4,7 +4,6 @@ import streamlit as st
 from dotenv import load_dotenv
 from mysql.connector import pooling
 import plotly.express as px
-from streamlit_plotly_events import plotly_events
 
 # =====================================================================================
 # CONFIG
@@ -31,10 +30,6 @@ DB_PORT = int(get_secret("DB_PORT", "3306"))
 DB_USER = get_secret("DB_USER")
 DB_PASS = get_secret("DB_PASS")
 DB_NAME = get_secret("DB_NAME")
-
-# estado de filtro por bucket (click en bar chart)
-if "bucket_filter" not in st.session_state:
-    st.session_state["bucket_filter"] = None
 
 # =====================================================================================
 # DB CONNECTION
@@ -210,7 +205,7 @@ if not resumen.empty:
 
     col1, col2 = st.columns([2,1])
 
-    # Bar chart: Distribución por bucket (clickable para filtrar detalle)
+    # Bar chart: Distribución por bucket (solo visual)
     with col1:
         fig = px.bar(
             df_b,
@@ -225,21 +220,7 @@ if not resumen.empty:
             plot_bgcolor="white",
             paper_bgcolor="white"
         )
-
-        events = plotly_events(
-            fig,
-            click_event=True,
-            hover_event=False,
-            select_event=False,
-            key="bucket_chart"
-        )
-
-        if events:
-            clicked_bucket = events[0].get("x") or events[0].get("Bucket")
-            if st.session_state["bucket_filter"] == clicked_bucket:
-                st.session_state["bucket_filter"] = None
-            else:
-                st.session_state["bucket_filter"] = clicked_bucket
+        st.plotly_chart(fig, use_container_width=True)
 
     # Treemap: Top 20 proveedores por exposición total (absoluta)
     with col2:
@@ -275,20 +256,22 @@ else:
     det["Fecha_Factura"] = pd.to_datetime(det["Fecha_Factura"]).dt.date
     det["VtoSAP"]        = pd.to_datetime(det["VtoSAP"]).dt.date
 
-    bucket_filter = st.session_state.get("bucket_filter")
+    # Dropdown de bucket para filtrar detalle
+    bucket_options = ["(Todos)", "A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto"]
+    bucket_sel = st.selectbox("Filtro por bucket", bucket_options, index=0)
 
-    if bucket_filter:
-        det_filtrado = det[det["bucket"] == bucket_filter]
-    else:
+    if bucket_sel == "(Todos)":
         det_filtrado = det
+    else:
+        det_filtrado = det[det["bucket"] == bucket_sel]
 
     st.dataframe(det_filtrado, use_container_width=True, height=420)
 
     total_regs = len(det_filtrado)
-    if bucket_filter:
-        st.write(f"Cantidad de comprobantes mostrados (filtro: {bucket_filter}): {total_regs}")
-    else:
+    if bucket_sel == "(Todos)":
         st.write(f"Cantidad de comprobantes mostrados: {total_regs}")
+    else:
+        st.write(f"Cantidad de comprobantes mostrados (filtro: {bucket_sel}): {total_regs}")
 
     c1, c2 = st.columns(2)
     c1.download_button(
