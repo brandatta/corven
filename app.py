@@ -220,6 +220,11 @@ if not resumen.empty:
             title="Distribución por bucket"
         )
         fig.update_traces(texttemplate="%{text:,}", textposition="outside")
+        fig.update_layout(
+            template="plotly_white",
+            plot_bgcolor="white",
+            paper_bgcolor="white"
+        )
 
         events = plotly_events(
             fig,
@@ -231,7 +236,6 @@ if not resumen.empty:
 
         if events:
             clicked_bucket = events[0].get("x") or events[0].get("Bucket")
-            # toggle: si clickeo el mismo bucket, saco el filtro
             if st.session_state["bucket_filter"] == clicked_bucket:
                 st.session_state["bucket_filter"] = None
             else:
@@ -252,6 +256,10 @@ if not resumen.empty:
             path=["Proveedor_Nombre"],
             values="Total_abs",
             title="Top 20 proveedores por exposición total"
+        )
+        fig3.update_layout(
+            template="plotly_white",
+            paper_bgcolor="white"
         )
         st.plotly_chart(fig3, use_container_width=True)
 
