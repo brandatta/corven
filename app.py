@@ -199,59 +199,56 @@ st.divider()
 # =====================================================================================
 st.subheader("Distribución y Análisis por Bucket")
 
+# Dropdown sobre el gráfico
 bucket_options = ["(Todos)", "A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto"]
 bucket_sel = st.selectbox("Filtro por bucket", bucket_options, index=0)
 
+# Bar Chart — Distribución por bucket
 if not resumen.empty:
     buckets = ["A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto"]
-    buck_vals = {b: abs(int0(resumen[b].sum())) for b in buckets}
-
     df_b = pd.DataFrame({
         "Bucket": buckets,
-        "Importe": [buck_vals[b] for b in buckets]
+        "Importe": [abs(int0(resumen[b].sum())) for b in buckets]
     })
 
-    col1, col2 = st.columns([2,1])
+    fig = px.bar(
+        df_b,
+        x="Bucket",
+        y="Importe",
+        text="Importe",
+        title="Distribución por bucket"
+    )
+    fig.update_traces(texttemplate="%{text:,}", textposition="outside")
+    fig.update_layout(
+        template="plotly_white",
+        plot_bgcolor="white",
+        paper_bgcolor="white"
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-    # Bar chart: Distribución por bucket
-    with col1:
-        fig = px.bar(
-            df_b,
-            x="Bucket",
-            y="Importe",
-            text="Importe",
-            title="Distribución por bucket"
-        )
-        fig.update_traces(texttemplate="%{text:,}", textposition="outside")
-        fig.update_layout(
-            template="plotly_white",
-            plot_bgcolor="white",
-            paper_bgcolor="white"
-        )
-        st.plotly_chart(fig, use_container_width=True)
+# =====================================================================================
+# TREEMAP ABAJO
+# =====================================================================================
+if not resumen.empty:
+    st.subheader("Top 20 Proveedores – Exposición Total")
 
-    # Treemap: Top 20 proveedores (absoluto)
-    with col2:
-        top = (
-            resumen.groupby("Proveedor_Nombre")["Total"]
-            .sum()
-            .reset_index()
-            .sort_values("Total", ascending=False)
-            .head(20)
-        )
-        top["Total_abs"] = top["Total"].abs()
+    top = (
+        resumen.groupby("Proveedor_Nombre")["Total"]
+        .sum()
+        .reset_index()
+        .sort_values("Total", ascending=False)
+        .head(20)
+    )
+    top["Total_abs"] = top["Total"].abs()
 
-        fig3 = px.treemap(
-            top,
-            path=["Proveedor_Nombre"],
-            values="Total_abs",
-            title="Top 20 proveedores por exposición total"
-        )
-        fig3.update_layout(
-            template="plotly_white",
-            paper_bgcolor="white"
-        )
-        st.plotly_chart(fig3, use_container_width=True)
+    fig3 = px.treemap(
+        top,
+        path=["Proveedor_Nombre"],
+        values="Total_abs",
+        title=""
+    )
+    fig3.update_layout(template="plotly_white", paper_bgcolor="white")
+    st.plotly_chart(fig3, use_container_width=True)
 
 # =====================================================================================
 # DETAIL TABLE
@@ -270,7 +267,7 @@ else:
     else:
         det_filtrado = det[det["bucket"] == bucket_sel]
 
-    st.dataframe(det_filtrado, use_container_width=True, height=420)
+    st.dataframe(det_filtrado, use_container_width=True, height=440)
 
     total_regs = len(det_filtrado)
     if bucket_sel == "(Todos)":
