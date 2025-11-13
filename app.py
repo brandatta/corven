@@ -158,16 +158,30 @@ else:
         ["A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto","Total","Total_MM"]
     ].sum(numeric_only=True)
 
-    overdue = int0(sums["0-15"] + sums["16-60"] + sums["61-90"] + sums["91-120"] + sums["+120"])
-    total = int0(sums["Total"])
+    # Valores originales (pueden ser negativos)
+    a_vencer = int0(sums["A Vencer"])
+    b_0_15   = int0(sums["0-15"])
+    b_16_60  = int0(sums["16-60"])
+    b_61_90  = int0(sums["61-90"])
+    b_91_120 = int0(sums["91-120"])
+    b_120p   = int0(sums["+120"])
+    sin_vto  = int0(sums["Sin Vto"])
+    total    = int0(sums["Total"])
     total_mm = int0(sums["Total_MM"])
-    porc = round(overdue/total*100, 1) if total else 0
+
+    overdue_raw = b_0_15 + b_16_60 + b_61_90 + b_91_120 + b_120p
+
+    # Para porcentajes usamos valores absolutos
+    total_abs   = abs(total)
+    overdue_abs = abs(overdue_raw)
+    porc        = round(overdue_abs / total_abs * 100, 1) if total_abs else 0
+
     docs = len(detalle) if not detalle.empty else resumen.shape[0]
 
     vals = [
-        int0(sums["A Vencer"]), int0(sums["0-15"]), int0(sums["16-60"]),
-        int0(sums["61-90"]), int0(sums["91-120"]), int0(sums["+120"]),
-        int0(sums["Sin Vto"]), total_mm, porc, docs
+        a_vencer, b_0_15, b_16_60,
+        b_61_90, b_91_120, b_120p,
+        sin_vto, total_mm, porc, docs
     ]
     labels = [
         "A Vencer","0-15","16-60","61-90","91-120","+120",
@@ -186,7 +200,11 @@ if not resumen.empty:
     buckets = ["A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto"]
     buck_vals = {b: int0(resumen[b].sum()) for b in buckets}
 
-    df_b = pd.DataFrame({"Bucket": buckets, "Importe": [buck_vals[b] for b in buckets]})
+    # Para gráficos trabajamos con montos en valor absoluto
+    df_b = pd.DataFrame({
+        "Bucket": buckets,
+        "Importe": [abs(buck_vals[b]) for b in buckets]
+    })
 
     col1, col2 = st.columns([2,1])
 
@@ -204,14 +222,19 @@ if not resumen.empty:
 
     # Pie chart: Vencido vs A Vencer
     with col2:
+        vencido_abs = abs(
+            buck_vals["0-15"] +
+            buck_vals["16-60"] +
+            buck_vals["61-90"] +
+            buck_vals["91-120"] +
+            buck_vals["+120"]
+        )
+        a_vencer_abs = abs(buck_vals["A Vencer"])
+        sin_vto_abs  = abs(buck_vals["Sin Vto"])
+
         df_pie = pd.DataFrame({
             "Estado": ["Vencido","A Vencer","Sin Vto"],
-            "Importe": [
-                buck_vals["0-15"] + buck_vals["16-60"] + buck_vals["61-90"] +
-                buck_vals["91-120"] + buck_vals["+120"],
-                buck_vals["A Vencer"],
-                buck_vals["Sin Vto"]
-            ]
+            "Importe": [vencido_abs, a_vencer_abs, sin_vto_abs]
         })
         fig2 = px.pie(
             df_pie,
@@ -229,10 +252,12 @@ if not resumen.empty:
         .sort_values("Total", ascending=False)
         .head(20)
     )
+    # También conviene verlo en valor absoluto para exposición
+    top["Total_abs"] = top["Total"].abs()
     fig3 = px.treemap(
         top,
         path=["Proveedor_Nombre"],
-        values="Total",
+        values="Total_abs",
         title="Top 20 proveedores por exposición total"
     )
     st.plotly_chart(fig3, use_container_width=True)
@@ -247,7 +272,7 @@ if detalle.empty:
 else:
     det = detalle.copy()
     det["Fecha_Factura"] = pd.to_datetime(det["Fecha_Factura"]).dt.date
-    det["VtoSAP"] = pd.to_datetime(det["VtoSAP"]).dt.date
+    det["VtoSAP"]        = pd.to_datetime(det["VtoSAP"]).dt.date
 
     st.dataframe(det, use_container_width=True, height=420)
 
