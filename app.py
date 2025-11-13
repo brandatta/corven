@@ -201,13 +201,11 @@ st.divider()
 # =====================================================================================
 # GRAPHS
 # =====================================================================================
-estado_click = None  # estado clickeado en este render
-
 if not resumen.empty:
     buckets = ["A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto"]
     buck_vals = {b: int0(resumen[b].sum()) for b in buckets}
 
-    # Para gráficos usamos valores absolutos
+    # Bar chart (por bucket, en absoluto)
     df_b = pd.DataFrame({
         "Bucket": buckets,
         "Importe": [abs(buck_vals[b]) for b in buckets]
@@ -215,7 +213,6 @@ if not resumen.empty:
 
     col1, col2 = st.columns([2,1])
 
-    # Bar chart: Distribución por bucket
     with col1:
         fig = px.bar(
             df_b,
@@ -227,47 +224,56 @@ if not resumen.empty:
         fig.update_traces(texttemplate="%{text:,}", textposition="outside")
         st.plotly_chart(fig, use_container_width=True)
 
-    # Pie chart: Vencido vs A Vencer (clickable)
+    # Pie chart basado en DETALLE (agrupado a Vencido / A Vencer / Sin Vto)
     with col2:
-        vencido_abs = abs(
-            buck_vals["0-15"] +
-            buck_vals["16-60"] +
-            buck_vals["61-90"] +
-            buck_vals["91-120"] +
-            buck_vals["+120"]
-        )
-        a_vencer_abs = abs(buck_vals["A Vencer"])
-        sin_vto_abs  = abs(buck_vals["Sin Vto"])
+        if not detalle.empty:
+            det_pie = detalle.copy()
 
-        df_pie = pd.DataFrame({
-            "Estado": ["Vencido","A Vencer","Sin Vto"],
-            "Importe": [vencido_abs, a_vencer_abs, sin_vto_abs]
-        })
-        fig2 = px.pie(
-            df_pie,
-            names="Estado",
-            values="Importe",
-            title="Vencido vs A Vencer"
-        )
+            def map_estado(bucket):
+                if bucket == "A Vencer":
+                    return "A Vencer"
+                elif bucket == "Sin Vto":
+                    return "Sin Vto"
+                else:
+                    return "Vencido"
 
-        selected = plotly_events(
-            fig2,
-            click_event=True,
-            hover_event=False,
-            select_event=False,
-            key="pie_estado"
-        )
+            det_pie["Estado"] = det_pie["bucket"].apply(map_estado)
+            det_pie["importe_abs"] = det_pie["ImpMonLoc"].abs()
 
-        if selected:
-            # En pie, la etiqueta suele venir en "label"
-            estado_click = selected[0].get("label") or selected[0].get("Estado")
-            # toggle: si clickeo el mismo, saco el filtro
-            if st.session_state["estado_filter"] == estado_click:
-                st.session_state["estado_filter"] = None
-            else:
-                st.session_state["estado_filter"] = estado_click
+            df_pie = (
+                det_pie.groupby("Estado", as_index=False)["importe_abs"]
+                .sum()
+                .rename(columns={"importe_abs": "Importe"})
+            )
 
-    # Treemap: Top 20 proveedores
+            fig2 = px.pie(
+                df_pie,
+                names="Estado",
+                values="Importe",
+                title="Vencido vs A Vencer"
+            )
+
+            selected = plotly_events(
+                fig2,
+                click_event=True,
+                hover_event=False,
+                select_event=False,
+                key="pie_estado"
+            )
+
+            if selected:
+                estado_click = selected[0].get("label") or selected[0].get("Estado")
+                # toggle: si clickeo el mismo, saco el filtro
+                if st.session_state["estado_filter"] == estado_click:
+                    st.session_state["estado_filter"] = None
+                else:
+                    st.session_state["estado_filter"] = estado_click
+
+            st.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.write("Sin datos de detalle para construir el gráfico Vencido vs A Vencer.")
+
+    # Treemap: Top 20 proveedores (en absoluto)
     top = (
         resumen.groupby("Proveedor_Nombre")["Total"]
         .sum()
@@ -292,12 +298,10 @@ st.subheader("Detalle de Comprobantes")
 if detalle.empty:
     st.write("Sin datos para los filtros seleccionados.")
 else:
-    # Copia base del detalle
     det = detalle.copy()
     det["Fecha_Factura"] = pd.to_datetime(det["Fecha_Factura"]).dt.date
     det["VtoSAP"]        = pd.to_datetime(det["VtoSAP"]).dt.date
 
-    # Aplicar filtro por estado del pie chart (si corresponde)
     estado = st.session_state.get("estado_filter")
 
     if estado == "Vencido":
@@ -311,12 +315,11 @@ else:
 
     st.dataframe(det_filtrado, use_container_width=True, height=420)
 
-    # Cantidad de registros mostrados
     total_regs = len(det_filtrado)
     if estado:
-        st.write(f"Cantidad de comprobantes mostrados (filtro: {estado}): **{total_regs}**")
+        st.write(f"Cantidad de comprobantes mostrados (filtro: {estado}): {total_regs}")
     else:
-        st.write(f"Cantidad de comprobantes mostrados: **{total_regs}**")
+        st.write(f"Cantidad de comprobantes mostrados: {total_regs}")
 
     c1, c2 = st.columns(2)
     c1.download_button(
