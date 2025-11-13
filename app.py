@@ -199,17 +199,20 @@ st.divider()
 # =====================================================================================
 st.subheader("Distribución y Análisis por Bucket")
 
-# Dropdown sobre el gráfico
 bucket_options = ["(Todos)", "A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto"]
 bucket_sel = st.selectbox("Filtro por bucket", bucket_options, index=0)
 
-# Bar Chart — Distribución por bucket
+# Bar Chart — Distribución por bucket (afectado por el filtro)
 if not resumen.empty:
     buckets = ["A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto"]
     df_b = pd.DataFrame({
         "Bucket": buckets,
         "Importe": [abs(int0(resumen[b].sum())) for b in buckets]
     })
+
+    # aplicar el mismo filtro del dropdown al gráfico
+    if bucket_sel != "(Todos)":
+        df_b = df_b[df_b["Bucket"] == bucket_sel]
 
     fig = px.bar(
         df_b,
@@ -262,6 +265,7 @@ else:
     det["Fecha_Factura"] = pd.to_datetime(det["Fecha_Factura"]).dt.date
     det["VtoSAP"]        = pd.to_datetime(det["VtoSAP"]).dt.date
 
+    # mismo filtro del dropdown aplicado al detalle
     if bucket_sel == "(Todos)":
         det_filtrado = det
     else:
