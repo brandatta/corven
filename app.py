@@ -4,7 +4,6 @@ import streamlit as st
 from dotenv import load_dotenv
 from mysql.connector import pooling
 import plotly.express as px
-import plotly.io as pio
 
 # =====================================================================================
 # CONFIG
@@ -23,7 +22,7 @@ load_dotenv()
 def get_secret(key, default=None):
     try:
         return st.secrets[key]
-    except:
+    except Exception:
         return os.getenv(key, default)
 
 DB_HOST = get_secret("DB_HOST")
@@ -141,8 +140,10 @@ resumen = load_resumen(sociedad, proveedor)
 detalle = load_detalle(sociedad, proveedor)
 
 def int0(x):
-    try: return int(x)
-    except: return 0
+    try:
+        return int(x)
+    except Exception:
+        return 0
 
 # =====================================================================================
 # KPI BLOCK
@@ -150,11 +151,12 @@ def int0(x):
 col = st.columns(10)
 
 if resumen.empty:
-    for c in col: c.metric("", "0")
+    for c in col:
+        c.metric("", "0")
 else:
     sums = resumen[
         ["A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto","Total","Total_MM"]
-    ].sum()
+    ].sum(numeric_only=True)
 
     overdue = int0(sums["0-15"] + sums["16-60"] + sums["61-90"] + sums["91-120"] + sums["+120"])
     total = int0(sums["Total"])
@@ -188,11 +190,19 @@ if not resumen.empty:
 
     col1, col2 = st.columns([2,1])
 
+    # Bar chart: Distribución por bucket
     with col1:
-        fig = px.bar(df_b, x="Bucket", y="Importe", text="Importe")
-        fig.update_traces(texttemplate="%{text:,}")
+        fig = px.bar(
+            df_b,
+            x="Bucket",
+            y="Importe",
+            text="Importe",
+            title="Distribución por bucket"
+        )
+        fig.update_traces(texttemplate="%{text:,}", textposition="outside")
         st.plotly_chart(fig, use_container_width=True)
 
+    # Pie chart: Vencido vs A Vencer
     with col2:
         df_pie = pd.DataFrame({
             "Estado": ["Vencido","A Vencer","Sin Vto"],
@@ -203,10 +213,15 @@ if not resumen.empty:
                 buck_vals["Sin Vto"]
             ]
         })
-        fig2 = px.pie(df_pie, names="Estado", values="Importe")
+        fig2 = px.pie(
+            df_pie,
+            names="Estado",
+            values="Importe",
+            title="Vencido vs A Vencer"
+        )
         st.plotly_chart(fig2, use_container_width=True)
 
-    # Top proveedores
+    # Treemap: Top 20 proveedores
     top = (
         resumen.groupby("Proveedor_Nombre")["Total"]
         .sum()
@@ -214,7 +229,12 @@ if not resumen.empty:
         .sort_values("Total", ascending=False)
         .head(20)
     )
-    fig3 = px.treemap(top, path=["Proveedor_Nombre"], values="Total")
+    fig3 = px.treemap(
+        top,
+        path=["Proveedor_Nombre"],
+        values="Total",
+        title="Top 20 proveedores por exposición total"
+    )
     st.plotly_chart(fig3, use_container_width=True)
 
 # =====================================================================================
@@ -232,5 +252,15 @@ else:
     st.dataframe(det, use_container_width=True, height=420)
 
     c1, c2 = st.columns(2)
-    c1.download_button("Descargar resumen (CSV)", resumen.to_csv(index=False).encode(), "resumen.csv")
-    c2.download_button("Descargar detalle (CSV)", det.to_csv(index=False).encode(), "detalle.csv")
+    c1.download_button(
+        "Descargar resumen (CSV)",
+        resumen.to_csv(index=False).encode("utf-8"),
+        "resumen.csv",
+        mime="text/csv"
+    )
+    c2.download_button(
+        "Descargar detalle (CSV)",
+        det.to_csv(index=False).encode("utf-8"),
+        "detalle.csv",
+        mime="text/csv"
+    )
