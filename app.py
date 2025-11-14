@@ -172,11 +172,16 @@ else:
 
     tabla_soc_sub = pd.concat([tabla_soc, subtotal_row], ignore_index=True)
 
-    # Mostrar tabla con subtotales
-    st.dataframe(
-        tabla_soc_sub,
-        use_container_width=True
-    )
+    # Estilo: fila SUBTOTAL en negrita
+    def bold_subtotal(row):
+        return ['font-weight: bold' if row['Sociedad'] == 'SUBTOTAL' else '' 
+                for _ in row]
+
+    tabla_style = tabla_soc_sub.style.apply(bold_subtotal, axis=1)
+
+    # Mostrar tabla estilizada
+    st.write(tabla_style)
+
 
 
 st.divider()
