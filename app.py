@@ -167,7 +167,7 @@ else:
     total_row = pd.DataFrame({
         "Sociedad": ["TOTAL"],
         **{b: [tabla_soc[b].sum()] for b in buckets},
-        "Subotal": [tabla_soc["Total"].sum()]
+        "TOTAL": [tabla_soc["Total"].sum()]
     })
 
     tabla_soc_total = pd.concat([tabla_soc, total_row], ignore_index=True)
