@@ -112,15 +112,6 @@ def load_proveedores(soc=None):
     return df
 
 # =====================================================================================
-# HELPERS
-# =====================================================================================
-def int0(x):
-    try:
-        return int(x)
-    except Exception:
-        return 0
-
-# =====================================================================================
 # UI
 # =====================================================================================
 
@@ -149,48 +140,31 @@ resumen = load_resumen(sociedad, proveedor)
 detalle = load_detalle(sociedad, proveedor)
 
 # =====================================================================================
-# KPI BLOCK
+# TABLA RESUMEN POR SOCIEDAD Y BUCKET (DEBAJO DEL TÍTULO)
 # =====================================================================================
-col = st.columns(10)
+st.subheader("Exposición por Sociedad y Bucket")
 
 if resumen.empty:
-    for c in col:
-        c.metric("", "0")
+    st.write("Sin datos para los filtros seleccionados.")
 else:
-    sums = resumen[
-        ["A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto","Total","Total_MM"]
-    ].sum(numeric_only=True)
+    # Buckets en columnas
+    buckets = ["A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto"]
 
-    a_vencer = int0(sums["A Vencer"])
-    b_0_15   = int0(sums["0-15"])
-    b_16_60  = int0(sums["16-60"])
-    b_61_90  = int0(sums["61-90"])
-    b_91_120 = int0(sums["91-120"])
-    b_120p   = int0(sums["+120"])
-    sin_vto  = int0(sums["Sin Vto"])
-    total    = int0(sums["Total"])
-    total_mm = int0(sums["Total_MM"])
+    # Agrupar por Sociedad y sumar los buckets
+    tabla_soc = (
+        resumen.groupby("Sociedad")[buckets]
+        .sum(numeric_only=True)
+        .reset_index()
+    )
 
-    overdue_raw = b_0_15 + b_16_60 + b_61_90 + b_91_120 + b_120p
+    # Valores absolutos e ints
+    for b in buckets:
+        tabla_soc[b] = tabla_soc[b].abs().astype(int)
 
-    total_abs   = abs(total)
-    overdue_abs = abs(overdue_raw)
-    porc        = round(overdue_abs / total_abs * 100, 1) if total_abs else 0
+    # Columna Total (suma de todos los buckets por sociedad)
+    tabla_soc["Total"] = tabla_soc[buckets].sum(axis=1).astype(int)
 
-    docs = len(detalle) if not detalle.empty else resumen.shape[0]
-
-    vals = [
-        a_vencer, b_0_15, b_16_60,
-        b_61_90, b_91_120, b_120p,
-        sin_vto, total_mm, porc, docs
-    ]
-    labels = [
-        "A Vencer","0-15","16-60","61-90","91-120","+120",
-        "Sin Vto","Total MM (-1)","% Vencido","Docs"
-    ]
-
-    for c, l, v in zip(col, labels, vals):
-        c.metric(l, f"{v:,}".replace(",", "."))
+    st.dataframe(tabla_soc, use_container_width=True)
 
 st.divider()
 
@@ -207,7 +181,7 @@ if not resumen.empty:
     buckets = ["A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto"]
     df_b = pd.DataFrame({
         "Bucket": buckets,
-        "Importe": [abs(int0(resumen[b].sum())) for b in buckets]
+        "Importe": [abs(resumen[b].sum()) for b in buckets]
     })
 
     # aplicar el mismo filtro del dropdown al gráfico
