@@ -163,8 +163,18 @@ else:
     # Columna Total en millones también
     tabla_soc["Total"] = tabla_soc[buckets].sum(axis=1).astype(int)
 
+    # Agregar fila de Totales
+    total_row = pd.DataFrame({
+        "Sociedad": ["TOTAL"],
+        **{b: [tabla_soc[b].sum()] for b in buckets},
+        "Total": [tabla_soc["Total"].sum()]
+    })
+
+    tabla_soc_total = pd.concat([tabla_soc, total_row], ignore_index=True)
+
+    # Mostrar tabla con totales
     st.dataframe(
-        tabla_soc,
+        tabla_soc_total,
         use_container_width=True
     )
 
