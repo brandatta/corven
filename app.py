@@ -96,20 +96,22 @@ def load_sociedades():
     return df["Sociedad"].tolist() if not df.empty else []
 
 def load_proveedores(soc=None):
+    sql = """
+        SELECT Proveedor, Proveedor_Nombre, SUM(Total) AS Deuda
+        FROM vista_aging_ap_resumen
+        WHERE 1=1
+    """
+    params = []
     if soc:
-        df = run_query("""
-            SELECT DISTINCT Proveedor, Proveedor_Nombre
-            FROM vista_aging_ap_resumen
-            WHERE Sociedad=%s
-            ORDER BY Proveedor_Nombre
-        """, (soc,))
-    else:
-        df = run_query("""
-            SELECT DISTINCT Proveedor, Proveedor_Nombre
-            FROM vista_aging_ap_resumen
-            ORDER BY Proveedor_Nombre
-        """)
-    return df
+        sql += " AND Sociedad=%s"
+        params.append(soc)
+
+    sql += """
+        GROUP BY Proveedor, Proveedor_Nombre
+        ORDER BY Deuda DESC
+    """
+
+    return run_query(sql, tuple(params))
 
 # =====================================================================================
 # UI
