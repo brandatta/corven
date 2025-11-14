@@ -142,7 +142,7 @@ detalle = load_detalle(sociedad, proveedor)
 # =====================================================================================
 # TABLA RESUMEN POR SOCIEDAD Y BUCKET (DEBAJO DEL TÍTULO)
 # =====================================================================================
-st.subheader("Exposición por Sociedad y Bucket")
+st.subheader("Exposición por Sociedad y Bucket (MM)")
 
 if resumen.empty:
     st.write("Sin datos para los filtros seleccionados.")
@@ -150,23 +150,26 @@ else:
     # Buckets en columnas
     buckets = ["A Vencer","0-15","16-60","61-90","91-120","+120","Sin Vto"]
 
-    # Agrupar por Sociedad y sumar los buckets
     tabla_soc = (
         resumen.groupby("Sociedad")[buckets]
         .sum(numeric_only=True)
         .reset_index()
     )
 
-    # Valores absolutos e ints
+    # Convertir a valores absolutos en millones (sin decimales)
     for b in buckets:
-        tabla_soc[b] = tabla_soc[b].abs().astype(int)
+        tabla_soc[b] = (tabla_soc[b].abs() / 1_000_000).round(0).astype(int)
 
-    # Columna Total (suma de todos los buckets por sociedad)
+    # Columna Total en millones también
     tabla_soc["Total"] = tabla_soc[buckets].sum(axis=1).astype(int)
 
-    st.dataframe(tabla_soc, use_container_width=True)
+    st.dataframe(
+        tabla_soc,
+        use_container_width=True
+    )
 
 st.divider()
+
 
 # =====================================================================================
 # GRÁFICOS + FILTRO POR BUCKET
